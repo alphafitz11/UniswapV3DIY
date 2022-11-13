@@ -122,11 +122,22 @@ contract UniswapV3PoolTest is Test {
 
         (uint256 poolBalance0, uint256 poolBalance1) = setupTestCase(params);
 
-        token1.mint(address(this), 42 ether);
+        uint256 swapAmount = 42 ether;
+        token1.mint(address(this), swapAmount);
+        token1.approve(address(this), swapAmount);
+
+        UniswapV3Pool.CallbackData memory extra = UniswapV3Pool.CallbackData({
+            token0: address(token0),
+            token1: address(token1),
+            payer: address(this)
+        });
 
         int256 userBalance0Before = int256(token0.balanceOf(address(this)));
 
-        (int256 amount0Delta, int256 amount1Delta) = pool.swap(address(this));
+        (int256 amount0Delta, int256 amount1Delta) = pool.swap(
+            address(this),
+            abi.encode(extra)
+        );
 
         // 检查swap中使用的代币数量
         assertEq(amount0Delta, -0.008396714242162444 ether, "invalid ETH out");
@@ -174,21 +185,31 @@ contract UniswapV3PoolTest is Test {
 
     /* Callback 函数 */
     // Mint对应的Callback函数
-    function uniswapV3MintCallback(uint256 amount0, uint256 amount1) public {
+    function uniswapV3MintCallback(uint256 amount0, uint256 amount1, bytes calldata data) public {
         if (transferInMintCallback) {
-            token0.transfer(msg.sender, amount0);
-            token1.transfer(msg.sender, amount1);
+            UniswapV3Pool.CallbackData memory extra = abi.decode(
+                data,
+                (UniswapV3Pool.CallbackData)
+            );
+
+            IERC20(extra.token0).transferFrom(extra.payer, msg.sender, amount0);
+            IERC20(extra.token1).transferFrom(extra.payer, msg.sender, amount1);
         }
     }
 
     // Swap对应的Callback函数
-    function uniswapV3SwapCallback(int256 amount0, int256 amount1) public {
+    function uniswapV3SwapCallback(int256 amount0, int256 amount1, bytes calldata data) public {
+        UniswapV3Pool.CallbackData memory extra = abi.decode(
+            data,
+            (UniswapV3Pool.CallbackData)
+        );
+
         if (amount0 > 0) {
-            token0.transfer(msg.sender, uint256(amount0));
+            IERC20(extra.token0).transferFrom(extra.payer, msg.sender, uint256(amount0));
         }
 
         if (amount1 > 0) {
-            token1.transfer(msg.sender, uint256(amount1));
+            IERC20(extra.token1).transferFrom(extra.payer, msg.sender, uint256(amount1));
         }
     }
 
@@ -211,11 +232,22 @@ contract UniswapV3PoolTest is Test {
         );
 
         if (params.mintLiquidity) {
+            token0.approve(address(this), params.wethBalance);
+            token1.approve(address(this), params.usdcBalance);
+
+            UniswapV3Pool.CallbackData memory extra = UniswapV3Pool
+                .CallbackData({
+                    token0: address(token0),
+                    token1: address(token1),
+                    payer: address(this)
+                });
+            
             (poolBalance0, poolBalance1) = pool.mint(
                 address(this),
                 params.lowerTick,
                 params.upperTick,
-                params.liquidity
+                params.liquidity,
+                abi.encode(extra)
             );
         }
 

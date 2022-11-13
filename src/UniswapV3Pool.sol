@@ -75,12 +75,19 @@ contract UniswapV3Pool {
         slot0 = Slot0({sqrtPriceX96: sqrtPriceX96, tick: tick});
     }
 
+    struct CallbackData {
+        address token0;
+        address token1;
+        address payer;
+    }
+
     // 铸币，指定提供的流动性数量，外围合约会提前将代币数量转换为流动性数量
     function mint(
         address owner,    // 流动性所有者地址
         int24 lowerTick,  // 流动性价格区间上界
         int24 upperTick,  // 流动性价格区间下界
-        uint128 amount    // 想要提供的流动性
+        uint128 amount,   // 想要提供的流动性
+        bytes calldata data  // 传递给回调函数的数据
     ) external returns (uint256 amount0, uint256 amount1) {
         if (
             lowerTick >= upperTick ||
@@ -114,7 +121,8 @@ contract UniswapV3Pool {
         if (amount1 > 0) balance1Before = balance1();
         IUniswapV3MintCallback(msg.sender).uniswapV3MintCallback(
             amount0,
-            amount1
+            amount1,
+            data
         );
         if (amount0 > 0 && balance0Before + amount0 > balance0()) {
             revert InsufficientInputAmount();
@@ -128,7 +136,7 @@ contract UniswapV3Pool {
 
     // 兑换，使用一种代币兑换另一种代币
     // 目前版本只接受recipient参数，为了简单起见，在函数中直接硬编码价格和tick
-    function swap(address recipient)
+    function swap(address recipient, bytes calldata data)
         public
         returns (int256 amount0, int256 amount1)
     {
@@ -147,7 +155,8 @@ contract UniswapV3Pool {
         uint256 balance1Before = balance1();
         IUniswapV3SwapCallback(msg.sender).uniswapV3SwapCallback(
             amount0,
-            amount1
+            amount1,
+            data
         );
         if (balance1Before + uint256(amount1) < balance1())
             revert InsufficientInputAmount();
