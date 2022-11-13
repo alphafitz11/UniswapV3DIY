@@ -80,3 +80,17 @@ print(f"存入 {amount_eth/eth} ETH 和 {amount_usdc/eth} USDC 所能提供的�
 amount0 = calc_amount0(liq, sqrtp_upp, sqrtp_cur)
 amount1 = calc_amount1(liq, sqrtp_low, sqrtp_cur)
 print(f"获取上述流动性需要存入的代币数量为 代币x: {amount0}, 代币y: {amount1}")
+
+
+# 假设用 42 USDC 换取 ETH
+amount_in = 42 * eth
+price_diff = (amount_in * q96) // liq
+price_next = sqrtp_cur + price_diff
+print("新的价格: ", (price_next / q96) ** 2)
+print("新的 sqrt_P: ", price_next)
+print("新的 tick: ", price_to_tick((price_next / q96) ** 2))
+
+amount_in = calc_amount1(liq, price_next, sqrtp_cur)
+amount_out = calc_amount0(liq, price_next, sqrtp_cur)
+print("USDC in: ", amount_in / eth)
+print("ETH out:", amount_out / eth)
