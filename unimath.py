@@ -62,6 +62,7 @@ price_low = 4545
 price_cur = 5000
 price_upp = 5500
 
+print("\nmilestone1: First Swap")
 print(f"价格区间: {price_low} - {price_upp}，当前价格: {price_cur}")
 
 sqrtp_low = price_to_sqrtp(price_low)
@@ -94,3 +95,42 @@ amount_in = calc_amount1(liq, price_next, sqrtp_cur)
 amount_out = calc_amount0(liq, price_next, sqrtp_cur)
 print("USDC in: ", amount_in / eth)
 print("ETH out:", amount_out / eth)
+print("---------------------")
+
+#实现swap数量的计算
+print("\nmilestone2: Second Swap")
+
+# 使用 ETH 兑换 USDC
+amount_in = 0.01337 * eth
+
+print(f"卖出 {amount_in/eth} ETH")
+
+# 使用当前sqrt_P、流动性L和要卖出的代币x数量计算出兑换后的价格
+price_next = int((liq * q96 * sqrtp_cur) // (liq * q96 + amount_in * sqrtp_cur))
+
+print("新的价格: ", (price_next / q96) ** 2)
+print("新的 sqrt_P: ", price_next)
+print("新的 tick: ", price_to_tick((price_next / q96) ** 2))
+
+# 计算某个流动性L下价格变化对应的代币数量变化
+amount_in = calc_amount0(liq, price_next, sqrtp_cur)
+amount_out = calc_amount1(liq, price_next, sqrtp_cur)
+
+print("ETH in: ", amount_in / eth)
+print("USDC out: ", amount_out / eth)
+# 对于以上这些数学计算，我们将在Solidity中实现
+
+# 计算tick对应的word位置和该位在word中的位置
+tick = 85176
+word_pos = tick >> 8  # or tick // 2**8
+bit_pos = tick % 256
+print(f"tick {tick} 对应的 Word 和 bit: Word {word_pos}, bit {bit_pos}")
+
+mask = 2**bit_pos  # or 1 << bit_pos
+print("位掩码:", bin(mask))
+
+word = (2**256) - 1  # 设为全1
+print(bin(word ^ mask))
+
+word = 0  # 设为全0
+print(bin(word ^ mask))

@@ -7,12 +7,14 @@ import "./interfaces/IUniswapV3SwapCallback.sol";
 
 import "./lib/Tick.sol";
 import "./lib/Position.sol";
+import "./lib/TickBitmap.sol";
 
 contract UniswapV3Pool {
     using Tick for mapping(int24 => Tick.Info);
     // 键是(owner, lowerTick, upperTick)的哈希
     using Position for mapping(bytes32 => Position.Info);
     using Position for Position.Info;
+    using TickBitmap for mapping(int16 => uint256);
 
     error InsufficientInputAmount();
     error InvalidTickRange();
@@ -62,6 +64,9 @@ contract UniswapV3Pool {
     mapping(int24 => Tick.Info) public ticks;
     // Position信息
     mapping(bytes32 => Position.Info) public positions;
+    // Tick的位图信息：其中值是word(uint256)，可以想象为一个0/1的无限连续数组
+    // n = tickIndex // 256, i = tickIndex % 256 => n是word的编号，i是tick在word中的编号
+    mapping(int16 => uint256) public tickBitmap;
 
     constructor(
         address token0_,
