@@ -5,9 +5,12 @@ import "./interfaces/IERC20.sol";
 import "./interfaces/IUniswapV3MintCallback.sol";
 import "./interfaces/IUniswapV3SwapCallback.sol";
 
-import "./lib/Tick.sol";
 import "./lib/Position.sol";
+import "./lib/Tick.sol";
 import "./lib/TickBitmap.sol";
+import "./lib/TickMath.sol";
+import "./lib/Math.sol";
+import "./lib/FixedPoint96.sol";
 
 contract UniswapV3Pool {
     using Tick for mapping(int24 => Tick.Info);
@@ -102,8 +105,16 @@ contract UniswapV3Pool {
 
         if (amount == 0) revert ZeroLiquidity();
 
-        ticks.update(lowerTick, amount);
-        ticks.update(upperTick, amount);
+        bool flippedLower = ticks.update(lowerTick, amount);
+        bool flippedUpper = ticks.update(upperTick, amount);
+
+        if (flippedLower) {
+            tickBitmap.flipTick(lowerTick, 1);
+        }
+
+        if (flippedUpper) {
+            tickBitmap.flipTick(upperTick, 1);
+        }
 
         Position.Info storage position = positions.get(
             owner,
@@ -113,9 +124,19 @@ contract UniswapV3Pool {
 
         position.update(amount);
 
-        // 现阶段硬编码，后边章节替换为实际计算
-        amount0 = 0.998976618347425280 ether;
-        amount1 = 5000 ether;
+        Slot0 memory slot0_ = slot0;
+
+        amount0 = Math.calcAmount0Delta(
+            TickMath.getSqrtRatioAtTick(slot0_.tick),
+            TickMath.getSqrtRatioAtTick(upperTick),
+            amount
+        );
+
+        amount1 = Math.calcAmount1Delta(
+            TickMath.getSqrtRatioAtTick(slot0_.tick),
+            TickMath.getSqrtRatioAtTick(lowerTick),
+            amount
+        );
 
         liquidity += uint128(amount);
 
