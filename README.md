@@ -18,3 +18,13 @@
 本节假设在 ETH/USDC 池中，使用 USDC 兑换 ETH，并且池中初始价格为 ETH/USDC=5000。因此在设定流动性时，假设价格的下限和上限分别是 4545 和 5500。根据 Uniswap V3 中 price-tick 的计算公式，当前tick: t_c = 85176，下限tick: t_l = 84222，上限tick: t_u = 86129。使用 Python 实现的计算方法见 [unimath.py](./unimath.py)。需要注意，Uniswap 使用 Q64.96 数字来存储 sqrt_P，即整数部分64位、小数部分96位的定点数。将浮点数计算为 Q64.96 只需要将其乘以 2^96。对于代币数量，我们存储任意数量，这里假设存入 1 ETH 和 5000 USDC。
 
 池中的初始流动性 L 可以根据 x/y 代币数量、假设的当前价格和价格区间的上限/下限计算得到([unimath.py](./unimath.py) 中的 liquidity0 和 liquidity1)。相应地，为了获得流动性 L 需要存入的 x/y 代币数量也可以根据 L、假设的当前价格和价格区间的上限/下限计算得到([unimath.py](./unimath.py) 中的 calc_amount0 和 calc_amount1)。
+
+## Milestone 2 Second Swap
+本节内容对应分支 milestone2。
+
+在第一节中，我们计算并硬编码了所有数量。在本节中，将使其变为动态，进行第二次互换，即相反方向的互换：卖出 ETH 买入 USDC。并对合约进行改进：
+1. 使用第三方库在 Solidity 中实现数学计算；
+2. 让用户选择交换方向，并且使pool合约支持双向交换；
+3. 更新 UI 以支持双向交换和输出量计算，实现另一个合约 Quoter。
+
+Solidity 中的数学计算难在：只支持有符号整型和无符号整型、需要让高级计算过程(指数、对数、平方根)尽可能高效以节约 gas、防止上溢/下溢。我们将使用第三方数学库来实现高级数学运算：[PRBMath](https://github.com/paulrberg/prb-math) 和 [TickMath](https://github.com/Uniswap/v3-core/blob/main/contracts/libraries/TickMath.sol)。前者是一个高级定点数学算法库，我们将使用 `mulDiv` 处理整数乘除时的溢出，后者来自 Uniswap V3 官方项目，实现了 `getSqrtRatioAtTick` 和 `getTickAtSqrtRatio` 函数，用于 sqrt_P 和 tick 之间的转换。
