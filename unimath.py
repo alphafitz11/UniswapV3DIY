@@ -107,6 +107,8 @@ print(f"卖出 {amount_in/eth} ETH")
 
 # 使用当前sqrt_P、流动性L和要卖出的代币x数量计算出兑换后的价格
 price_next = int((liq * q96 * sqrtp_cur) // (liq * q96 + amount_in * sqrtp_cur))
+# 当卖出代币y时需要使用下面的公式计算价格
+# price_next = sqrtp_cur + (amount_in * q96) // liq
 
 print("新的价格: ", (price_next / q96) ** 2)
 print("新的 sqrt_P: ", price_next)

@@ -10,6 +10,7 @@ import "./lib/Tick.sol";
 import "./lib/TickBitmap.sol";
 import "./lib/TickMath.sol";
 import "./lib/Math.sol";
+import "./lib/SwapMath.sol";
 import "./lib/FixedPoint96.sol";
 
 contract UniswapV3Pool {
@@ -58,6 +59,30 @@ contract UniswapV3Pool {
         // 当前的tick
         int24 tick;
     }
+
+    struct CallbackData {
+        address token0;
+        address token1;
+        address payer;
+    }
+
+    // 当前兑换的状态
+    struct SwapState {
+        uint256 amountSpecifiedRemaining;  // 池需要购买的剩余代币数量，为0表示完成swap
+        uint256 amountCalculated;  // 合约计算的兑换出的数量
+        uint160 sqrtPriceX96;  // swap完成后的新的当前价格
+        int24 tick;  // swap完成后的新的当前tick
+    }
+
+    // 当前兑换步骤的状态，跟踪一个"order filling"的一次迭代的状态
+    struct StepState {
+        uint160 sqrtPriceStartX96;  // 迭代开始的价格
+        int24 nextTick;  // 将要为swap提供流动性的下一个初始化tick
+        uint160 sqrtPriceNextX96;  // 下一个tick的价格
+        uint256 amountIn;  // 当前迭代的流动性可以提供的数量
+        uint256 amountOut;  // 当前迭代的流动性可以提供的数量
+    }
+
     Slot0 public slot0;
 
     // 流动性数量 L
@@ -83,11 +108,6 @@ contract UniswapV3Pool {
         slot0 = Slot0({sqrtPriceX96: sqrtPriceX96, tick: tick});
     }
 
-    struct CallbackData {
-        address token0;
-        address token1;
-        address payer;
-    }
 
     // 铸币，指定提供的流动性数量，外围合约会提前将代币数量转换为流动性数量
     function mint(
@@ -161,31 +181,87 @@ contract UniswapV3Pool {
     }
 
     // 兑换，使用一种代币兑换另一种代币
-    // 目前版本只接受recipient参数，为了简单起见，在函数中直接硬编码价格和tick
-    function swap(address recipient, bytes calldata data)
-        public
-        returns (int256 amount0, int256 amount1)
-    {
-        int24 nextTick = 85184;
-        uint160 nextPrice = 5604469350942327889444743441197;
+    function swap(
+        address recipient,  // 接收者
+        bool zeroForOne,    // 兑换方向：true表示token0换为token1，false表示token1换为token0
+        uint256 amountSpecified,  // 用户想要出售的代币数量
+        bytes calldata data
+    ) public returns (int256 amount0, int256 amount1) {
+        Slot0 memory slot0_  = slot0;
 
-        amount0 = -0.008396714242162444 ether;
-        amount1 = 42 ether;
+        SwapState memory state = SwapState({
+            amountSpecifiedRemaining: amountSpecified,
+            amountCalculated: 0,
+            sqrtPriceX96: slot0_.sqrtPriceX96,
+            tick: slot0_.tick
+        });
 
-        // 更新pool当前状态
-        (slot0.tick, slot0.sqrtPriceX96) = (nextTick, nextPrice);
+        // 循环直到amountSpecifiedRemaining为0，即池有足够的流动性从用户购买amountSpecified的代币
+        while (state.amountSpecifiedRemaining > 0) {
+            StepState memory step;
 
-        // 合约发送代币给recipient，调用者发送token到合约
-        IERC20(token0).transfer(recipient, uint256(-amount0));
+            step.sqrtPriceStartX96 = state.sqrtPriceX96;
 
-        uint256 balance1Before = balance1();
-        IUniswapV3SwapCallback(msg.sender).uniswapV3SwapCallback(
-            amount0,
-            amount1,
-            data
-        );
-        if (balance1Before + uint256(amount1) < balance1())
-            revert InsufficientInputAmount();
+            (step.nextTick, ) = tickBitmap.nextInitializedTickWithinOneWord(
+                state.tick,
+                1,
+                zeroForOne
+            );
+
+            step.sqrtPriceNextX96 = TickMath.getSqrtRatioAtTick(step.nextTick);
+
+            (state.sqrtPriceX96, step.amountIn, step.amountOut) = SwapMath
+                .computeSwapStep(
+                    state.sqrtPriceX96,
+                    step.sqrtPriceNextX96,
+                    liquidity,
+                    state.amountSpecifiedRemaining
+                );
+
+            state.amountSpecifiedRemaining -= step.amountIn;
+            state.amountCalculated += step.amountOut;
+            state.tick = TickMath.getTickAtSqrtRatio(state.sqrtPriceX96);
+        }
+
+        // 更新pool的当前状态
+        if (state.tick != slot0_.tick) {
+            (slot0.sqrtPriceX96, slot0.tick) = (state.sqrtPriceX96, state.tick);
+        }
+
+        (amount0, amount1) = zeroForOne
+            ? (
+                int256(amountSpecified - state.amountSpecifiedRemaining),
+                -int256(state.amountCalculated)
+            )
+            : (
+                -int256(state.amountCalculated),
+                int256(amountSpecified - state.amountSpecifiedRemaining)
+            );
+
+        // 根据兑换方向和兑换循环中计算的数量来计算兑换数量
+        if (zeroForOne) {
+            IERC20(token1).transfer(recipient, uint256(-amount1));
+
+            uint256 balance0Before = balance0();
+            IUniswapV3SwapCallback(msg.sender).uniswapV3SwapCallback(
+                amount0,
+                amount1,
+                data
+            );
+            if (balance0Before + uint256(amount0) > balance0())
+                revert InsufficientInputAmount();
+        } else {
+            IERC20(token0).transfer(recipient, uint256(-amount0));
+
+            uint256 balance1Before = balance1();
+            IUniswapV3SwapCallback(msg.sender).uniswapV3SwapCallback(
+                amount0,
+                amount1,
+                data
+            );
+            if (balance1Before + uint256(amount1) > balance1())
+                revert InsufficientInputAmount();
+        }
 
         emit Swap(
             msg.sender,

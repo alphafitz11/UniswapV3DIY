@@ -45,6 +45,63 @@ library Math {
             );
     }
 
+    // 在给定当前价格和流动性的情况下，计算兑换指定数量的输入token之后的价格
+    // 处理双向兑换，并在单独的函数中实现
+    function getNextSqrtPriceFromInput(
+        uint160 sqrtPriceX96,
+        uint128 liquidity,
+        uint256 amountIn,
+        bool zeroForOne
+    ) internal pure returns (uint160 sqrtPriceNextX96) {
+        sqrtPriceNextX96 = zeroForOne
+            ? getNextSqrtPriceFromAmount0RoundingUp(
+                sqrtPriceX96,
+                liquidity,
+                amountIn
+            )
+            : getNextSqrtPriceFromAmount1RoundingDown(
+                sqrtPriceX96,
+                liquidity,
+                amountIn
+            );
+    }
+
+    function getNextSqrtPriceFromAmount0RoundingUp(
+        uint160 sqrtPriceX96,
+        uint128 liquidity,
+        uint256 amountIn
+    ) internal pure returns (uint160) {
+        uint256 numerator = uint256(liquidity) << FixedPoint96.RESOLUTION;
+        uint256 product = amountIn * sqrtPriceX96;
+
+        if (product / amountIn == sqrtPriceX96) {
+            uint256 denominator = numerator + product;
+            if (denominator >= numerator) {
+                // 最精确的公式，但可能在amountIn*sqrtPriceX96时发生溢出
+                return
+                    uint160(
+                        mulDivRoundingUp(numerator, sqrtPriceX96, denominator)
+                    );
+            }
+        }
+
+        // 发生溢出时的代替公式，精度更低
+        return
+            uint160(
+                divRoundingUp(numerator, (numerator / sqrtPriceX96) + amountIn)
+            );
+    }
+
+    function getNextSqrtPriceFromAmount1RoundingDown(
+        uint160 sqrtPriceX96,
+        uint128 liquidity,
+        uint256 amountIn
+    ) internal pure returns (uint160) {
+        return 
+            sqrtPriceX96 +
+            uint160((amountIn << FixedPoint96.RESOLUTION) / liquidity);
+    }
+
     // 在一次操作中进行乘法和除法，此函数基于 PRBMath 中的 mulDiv
     function mulDivRoundingUp(
         uint256 a,
